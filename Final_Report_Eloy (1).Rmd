@@ -1,0 +1,869 @@
+---
+title: "Final Report"
+author: "Eloy Celaya Lopez"
+date:  "`r paste0(lubridate::month(Sys.Date(), label = T, abbr = F), ' ', scales::ordinal(lubridate::day(Sys.Date())), ', ', lubridate::year(Sys.Date()))`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+First, we will load the required packages
+```{r, message = FALSE, warning = FALSE}
+#Loading packages
+library(tidyverse)
+library(skimr)
+library(knitr)
+library(ggthemes)
+library(ggpubr)
+library(patchwork)
+library(stringr)
+library(lubridate)
+library(showtext)
+library(flextable)
+library(janitor)
+library(wordcloud2)
+```
+
+I am going to be using the given "Presidential Elections Data: State Level" data set, let's read it in:
+
+```{r}
+#Importing data into R
+elections_data <- read_csv("https://raw.githubusercontent.com/dilernia/STA418-518/main/Data/1976-2020-president.csv")
+```
+
+Let's skim the dataset
+
+```{r}
+skim(elections_data)
+```
+
+After importing the data set and using the skim function, we can analyze the data. The dataset contains 4,287 rows and 15 columns, representing 15 variables. More in detail, we have 6 character variables, 2 logical ones and 7 numeric. Looking at the m_missing column, we learn that all the numeric and 4 of the character variables have no missing values. Candidate has 287 missing values, so its complete rate is 0.89 and Party_detailed has 456 missing values, which gives it a 0.89 complete rate. This is not a big deal, since the candidates and parties missing all got a really low number of votes, so they won't be used. We can also point out that the variable Office has only one unique value, it been "US PRESIDENT", since all candidates were running for the same office. Therefore, this variable won't be of any use, so we could remove it. When looking at the logic ones on the other hand, we find that in the writein variable we are missing 3 values, which is not substantial since the complete rate is 0.9993002. For the other logic variable, notes, we can see that all of the values are missing. We will later get rid of this column since it does not provide any information. 
+
+We will also explore the data with the glimpse function
+
+```{r}
+glimpse(elections_data)
+```
+
+After using the glimpse function, we can now see with more detail what type each variable is and take a look at the first rows. Now we can confirm the patterns I explained above when using the skim function. We can see how the office variable always has the same value, or how the notes column is empty. 
+
+# 1. Data Dictionary
+
+We are going to print the main information explained at the top in a data dictionary:
+
+```{r}
+#Creating data dictionary
+dataDictionary1 <- tibble(Variable = colnames(elections_data),
+                         Description = c("Election year",
+                                         "State name",
+                                         "State postal code abbreviation",
+                                         "State FIPS code",
+                                         "State census code",
+                                         "State Inter-university Consortium for Political and Social Research code",
+                                         "Name of the public office to which the candidate is seeking election",
+                                         "Candidate name",
+                                         "Full name of the candidate's political party",
+                                         "Candidate is a write-in (TRUE or FALSE)",
+                                         "Number of votes for candidate",
+                                         "Total votes cast in the election for the state",
+                                         "Version",
+                                         "Notes",
+                                         "Just the major parties, with others marked as other"),
+                         Type = map_chr(elections_data, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(elections_data, .f = function(x){class(x)[1]}))
+
+# Printing nicely in R Markdown
+flextable::flextable(dataDictionary1, cwidth = 2)
+```
+
+# 2. Data Cleaning
+
+## a. Merging Data Sets
+
+It can be really interesting to look for patterns in the different states where democrats or republicans where the most voting party. Does income, race, education, gender or any other factors have anything to do with the number of votes each party is getting?
+To find this out I will be combining the previously explained elections data set with a new one, which has census data from every state from the years 2008 trough 2021. 
+
+First, let's read the data set: 
+
+```{r}
+#Importing data
+census_data <- read_csv("https://raw.githubusercontent.com/dilernia/STA418-518/main/Data/census_data_state_2008-2021.csv")
+```
+
+First, let's skim the data:
+
+```{r}
+skim(census_data)
+```
+After skimming the data, we can see we have 2 character variables and 24 numeric ones. All of the 26 variables have a complete rate of 1, meaning there are no missing values, as we can see in the n_missing row. 
+
+Let's take a glimpse at this data set to see which variables could be useful: 
+
+```{r}
+glimpse(census_data)
+```
+
+Now, let's create a data dictionary for the census data set:
+
+```{r}
+#Creating data dictionary
+dataDictionary2 <- tibble(Variable = colnames(census_data),
+                         Description = c("Geographic region ID with the first 2 digits being the state Federal Information Processing Standard (FIPS) code and the last 3 digits the county FIPS code",
+                                         "Geographic region",
+                                         "Year",
+                                         "Population",
+                                         "Median income in dollars",
+                                         "Median monthly rent costs for renters in dollars",
+                                         "Median monthly housing costs for homeowners in dollars",
+                                         "Proportion of people who are female",
+                                         "Proportion of people who are male",
+                                         "Proportion of people who are white alone",
+                                         "Proportion of people who are black or African American alone",
+                                         "Proportion of people who are American Indian and Alaska Native alone",
+                                         "Proportion of people who are Asian alone",
+                                         "Proportion of people who are Native Hawaiian and Other Pacific Islander alone",
+                                         "Proportion of people who are some other race alone",
+                                         "Proportion of people who are two or more races",
+                                         "Proportion of people 25 and older whose highest education level is high school",
+                                         "Proportion of people 25 and older whose highest education level is a GED",
+                                         "Proportion of people 25 and older whose highest education level is some, but less than 1 year of college",
+                                         "Proportion of people 25 and older whose highest education level is greater than 1 year of college but no degree",
+                                         "Proportion of people 25 and older whose highest education level is an Associate's degree",
+                                         "Proportion of people 25 and older whose highest education level is a Bachelor's degree",
+                                         "Proportion of people 25 and older whose highest education level is a Master's degree",
+                                         "Proportion of people 25 and older whose highest education level is a Professional degree",
+                                         "Proportion of people 25 and older whose highest education level is a Doctoral degree",
+                                         "Proportion of people 25 and older living in poverty, defined by the Census Bureau as having an income below the poverty threshold for their family size"),
+                         Type = map_chr(census_data, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(census_data, .f = function(x){class(x)[1]}))
+
+# Printing nicely in R Markdown
+flextable::flextable(dataDictionary2, cwidth = 2)
+```
+
+
+Before merging the data sets, we need to get the elections data set ready, since for every state-year combination, there is more than one entry, since we have one for every candidate in each state-year combination. On the census data set, we only have each state-year combination once. 
+
+First we will drop the variables we don't need:
+
+```{r}
+#Dropping variables
+elections_new <- elections_data |>
+  dplyr::select(-office, -notes, -writein, -version, -state_po, -state_fips, -state_cen, -state_ic, -totalvotes)
+```
+
+We are going to add a variable called total_votes_us that measures the total votes in the country of each candidate of the main parties each year
+
+```{r}
+#Adding new variable for total votes
+elections_new <- elections_new |> 
+  group_by(year, candidate, party_simplified) |> 
+  mutate(total_votes_us = sum(candidatevotes, na.rm = TRUE)) |> 
+  ungroup()
+```
+
+After this, we are going to keep only one row for each state-year combination. More specifically, we will keep the row with the candidate with more votes for every state-year combination. In other words, we will keep the row of the candidate who won each state. 
+
+```{r}
+#Keep only the row of the winning party for every state-year combination
+elections_summarized <- elections_new |> 
+  group_by(state, year) |> 
+  slice_max(order_by = candidatevotes, n = 1) |> 
+  ungroup()
+
+#Let's sort it by year, not state
+elections_summarized <- elections_summarized |> 
+  arrange(year, state)
+
+#Finally, let's take a glimpse at the new data set to check if it worked
+glimpse(elections_summarized)
+```
+
+Since on the census data set each state is written as a title (Michigan) and on the elections data all the letters are uppercase (MICHIGAN), we will change the format on this last data set so that the merge is possible. 
+
+```{r}
+#Change state format
+elections_summarized <- elections_summarized |> 
+  mutate(state = str_to_title(state))
+```
+
+Let's get back to the census data set before merging. There is no data for the year 2020, due to COVID. Since this is an election year, it could be really useful for the analysis. Therefore, I am going to change the year of the 2021 data to 2020. Since it is from the following year it won't differ much from the 2020 data. This way, we will have demographic data of one more election year.
+
+```{r}
+#Changing 2021 to 2020
+census_data <- census_data |> 
+  mutate(year = if_else(year == 2021, 2020, year))
+```
+
+
+Before merging the data sets, we need to keep a few things in mind. The elections data set starts in 1976 and the census in 2008. Therefore, we can't use a left join since the data from 1976 to 2007 will have no values for the census variables. Also, since elections are every 4 years, we can't use a right join because for the non-election years, the elections variables would be empty, Therefore, the appropriate join is an inner join.
+
+
+```{r}
+# Merge elections_summarized with census_data
+merged_data <- elections_summarized |> 
+  inner_join(census_data, by = c("state" = "county_state", "year" = "year"))
+
+# Verify the merged data
+glimpse(merged_data)
+```
+
+```{r}
+skim(merged_data)
+```
+
+After reviewing the newly created data set, we can see there are no missing values in any of the variables. We now have 31 total variables and 200 rows. The census data set had data on the 50 states, and since 4 election years appear on it, we have 200 rows of data, from the years 2008, 2012, 2016 and 2020.  
+
+Let's create another data dictionary for the merged data set, having in mind all the modifications done before the merging:
+
+```{r}
+#Creating data dictionary
+dataDictionary3 <- tibble(Variable = colnames(merged_data),
+                         Description = c("Election year",
+                                         "State name",
+                                         "Candidate name",
+                                         "Full name of the candidate's political party",
+                                         "Number of votes for candidate",
+                                         "Just the major parties, with others marked as other",
+                                         "Total votes in the election that year in the US",
+                                         "Geographic region ID with the first 2 digits being the state Federal Information Processing Standard (FIPS) code and the last 3 digits the county FIPS code",
+                                         "Population",
+                                         "Median income in dollars",
+                                         "Median monthly rent costs for renters in dollars",
+                                         "Median monthly housing costs for homeowners in dollars",
+                                         "Proportion of people who are female",
+                                         "Proportion of people who are male",
+                                         "Proportion of people who are white alone",
+                                         "Proportion of people who are black or African American alone",
+                                         "Proportion of people who are American Indian and Alaska Native alone",
+                                         "Proportion of people who are Asian alone",
+                                         "Proportion of people who are Native Hawaiian and Other Pacific Islander alone",
+                                         "Proportion of people who are some other race alone",
+                                         "Proportion of people who are two or more races",
+                                         "Proportion of people 25 and older whose highest education level is high school",
+                                         "Proportion of people 25 and older whose highest education level is a GED",
+                                         "Proportion of people 25 and older whose highest education level is some, but less than 1 year of college",
+                                         "Proportion of people 25 and older whose highest education level is greater than 1 year of college but no degree",
+                                         "Proportion of people 25 and older whose highest education level is an Associate's degree",
+                                         "Proportion of people 25 and older whose highest education level is a Bachelor's degree",
+                                         "Proportion of people 25 and older whose highest education level is a Master's degree",
+                                         "Proportion of people 25 and older whose highest education level is a Professional degree",
+                                         "Proportion of people 25 and older whose highest education level is a Doctoral degree",
+                                         "Proportion of people 25 and older living in poverty, defined by the Census Bureau as having an income below the poverty threshold for their family size"),
+                         Type = map_chr(merged_data, .f = function(x){typeof(x)[1]}),
+                         Class = map_chr(merged_data, .f = function(x){class(x)[1]}))
+
+# Printing nicely in R Markdown
+flextable::flextable(dataDictionary3, cwidth = 2)
+```
+
+
+## b. String Manipulation
+
+There are 50 states in the US, as stated before. All these states have lots of different names, and, some of them include meaningful words in their names. For instance, some States start with New (New York) and others contain directional words (North Carolina). We will now see exactly how many of these states there are.
+
+```{r}
+#Detecting the pattern with str_detect() function
+merged_data <- merged_data |> 
+  mutate(
+    is_new_state = str_detect(state, "^New"),
+    is_directional_state = str_detect(state, "North|South|West|East"))
+
+#Only unique values
+unique_new_states <- merged_data |> 
+  filter(is_new_state == TRUE) |> 
+  distinct(state)
+unique_directional_states <- merged_data |> 
+  filter(is_directional_state == TRUE) |> 
+  distinct(state)
+
+#Displaying the results
+
+unique_states_combined <- merged_data |> 
+  mutate(
+    state_type = case_when(
+      str_detect(state, "^New") ~ "New",
+      str_detect(state, "North|South|West|East") ~ "Directional",
+      TRUE ~ NA_character_)) |> 
+  filter(!is.na(state_type)) |> 
+  distinct(state, state_type)
+
+unique_states_combined |>
+  flextable() |>
+  set_caption("States with New or Directional words") |>
+  theme_vanilla() |>
+  autofit()
+```
+
+As we can see displayed in the above table, there are a total of 4 states starting with the word "New" and 5 starting with directional words. 
+
+Now, to improve the visualizations of the tables and graphs that will later be shown, I will update multiple variables of the merged data set as well as from the elections one, since both of them will be used.I will change the variables candidate, party_detailed and party_simplified to a title format:
+
+```{r}
+#For the merged data set
+merged_data <- merged_data |> 
+  mutate(
+    candidate = str_to_title(candidate),
+    party_detailed = str_to_title(party_detailed),
+    party_simplified = str_to_title(party_simplified))
+
+#For the elections data set
+elections_new <- elections_new |> 
+  mutate(
+    candidate = str_to_title(candidate),
+    party_detailed = str_to_title(party_detailed),
+    party_simplified = str_to_title(party_simplified))
+```
+
+Now all the entries for these variables will have a title format. REPUBLICAN is now Republican
+
+Since the candidates first and last names are in the same column, with a format "Last Name, First Name", we are going to split them and create two new columns, first_name and last_name so we can use them separately. If a last name or first letter of the last name appears in the original name, it will be deleted. In case we need it later, we will apply these changes to both data sets.
+
+```{r}
+#For the merged dataset
+merged_data <- merged_data |> 
+  mutate(last_name = str_split(candidate, ",", simplify = TRUE)[, 1],
+first_and_middle_name = str_trim(str_split(candidate, ",", simplify = TRUE)[, 2]),
+first_name = str_split(first_and_middle_name, " ", simplify = TRUE)[, 1]) |>
+  select(-first_and_middle_name)
+
+#For the elections dataset
+elections_new <- elections_new |> 
+  mutate(last_name = str_split(candidate, ",", simplify = TRUE)[, 1],
+first_and_middle_name = str_trim(str_split(candidate, ",", simplify = TRUE)[, 2]),
+first_name = str_split(first_and_middle_name, " ", simplify = TRUE)[, 1]) |>
+  select(-first_and_middle_name)
+```
+
+Now two new rows have been created. For example, if the original name was "Obama, Barack H.", now it also appears divided into two columns as "Obama" and "Barack".
+
+
+# 3. Exploratory Data Analysis
+
+## a. Tables of Summary Statistics
+
+### Table for candidate votes grouped by party
+
+For this first table, we are going to see the count and some important statistics of the main political parties in the country.
+
+```{r}
+#creating table
+candidate_by_party <- elections_new |> group_by(party_simplified) |> 
+summarize(
+  count = n(),
+  total_votes = sum(candidatevotes, na.rm = TRUE),
+  max_votes = max(candidatevotes, na.rm = TRUE),
+  mean_votes = mean(candidatevotes, na.rm = TRUE),
+  median_votes = median(candidatevotes, na.rm = TRUE)) |> 
+  arrange(desc(total_votes))
+
+#Changing col names
+candidate_by_party <- candidate_by_party |>
+  rename(
+    "Party" = party_simplified,
+    "Total states featured in" = count,
+    "Total votes" = total_votes,
+    "Max votes" = max_votes,
+    "Mean votes" = mean_votes,
+    "Median votes" = median_votes)
+
+#Giving format to table
+candidate_by_party |>
+  flextable() |>
+  set_caption(caption = "Table 1: Summary statistics of votes by party for the elections 1976-2020") |>
+  theme_vanilla() |>
+  autofit()
+```
+
+
+### Frequency table of more voted candidates over the years
+
+For this frequency table, we are going to show the candidates with the more total votes in a specific year, which year it is and the votes. We will sort them descending by the number of votes and show the highest 10.
+For this table, we will also be using the original data set of elections. 
+
+```{r}
+#Creating table
+Most_votes <- elections_new |> 
+  group_by(year, candidate, party_simplified) |> 
+  distinct(total_votes_us, .keep_all = TRUE) |> 
+  ungroup() |>
+  select(candidate, year, party_simplified, total_votes_us) |>
+  arrange(desc(total_votes_us)) |>
+  slice_head(n = 10)
+
+#Changing col names
+
+Most_votes <- Most_votes |>
+  rename(
+    "Candidate" = candidate,
+    "Year" = year,
+    "Party" = party_simplified,
+    "Total votes" = total_votes_us)
+
+#Giving format to table
+Most_votes |>
+  flextable() |>
+  set_caption(caption = "Table 2: Top candidates with the highest total votes by year from 1976 to 2020, including party affiliation and vote counts.") |>
+  theme_vanilla() |>
+  autofit()
+```
+
+### Voter median income and poverty rate comparison
+
+As we saw on the two previous tables, the most voted parties over the years en every state are the Democrats and Republicans, they have always been on top. Throughout this project, I am going to try finding the relation some demographic factors have in the winning party of each state.
+For this, first I am going to create a table showing the average voter turnout and poverty rate of each of the two mentioned dominant parties.
+
+```{r}
+#creating table
+table_dominant_party <- merged_data |> 
+  group_by(party_simplified) |>
+  summarize(
+    avg_median_income = round(mean(median_income, na.rm = TRUE), 3),
+    avg_poverty_rate = round(mean(prop_poverty, na.rm = TRUE), 3),
+    total_states = n()) |> 
+  ungroup()
+
+#Changing col names
+table_dominant_party <- table_dominant_party |> 
+  rename(
+    "Party" = party_simplified,
+    "Median Income" = avg_median_income,
+    "Poverty" = avg_poverty_rate,
+    "Number of states won" = total_states)
+
+#Giving format to table
+table_dominant_party |>
+  flextable() |>
+  set_caption(caption = "Table 3: Average Voter Median Income and Poverty Rate by Dominant Party (2008-2020)") |>
+  theme_vanilla() |> 
+  autofit()
+```
+
+We can see how median income is higher for democrats, exactly an 19.5% higher. Regarding the poverty rate, the one for republican states is higher by around a 20%. 
+We will later explore this matter further with some graphs. 
+
+## b. Data Visualizations
+
+For many of the visualizations, we will use the different colors of the main parties:
+
+```{r}
+party_colors <- c(
+  "Democrat" = "#0015BC",
+  "Republican" = "#FF0000",    
+  "Libertarian" = "#FDBB30",   
+  "Other" = "grey")
+```
+
+### Income over the years
+
+Housing affordability has become a significant issue in the United States, with median rent  rising over the past few decades. This upward trend reflects a combination of economic factors, including inflation, increasing demand for housing, and policy decisions at both the state and local levels. Rising rents often place a huge burden on lower and middle-income families, highlighting the importance of housing policy in political discourse.
+
+With some visualizations, we will try to examine how median rent has evolved over time and its connections to political dynamics. 
+
+First, I will create a line chart to show the median income from the years 2008-2020:
+
+```{r}
+census_data |> 
+  group_by(year) |> 
+  summarize(avg_rent = mean(median_monthly_rent_cost, na.rm = TRUE)) |> 
+  ggplot(aes(x = year, y = avg_rent)) +
+  geom_line(size = 1, color = "#E69F00") +
+  geom_point(size = 3, color = "#E69F00") +
+  labs(
+    title = "Trend in Median Rent Over the Years (2008-2020)",
+    x = "Year",
+    y = "Median Monthly Rent Cost (USD)",
+    caption = "Source: tidycensus R package and United States Census website") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+     plot.caption = element_text(hjust = 0.5, size = 12, face = "italic"),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14))
+```
+
+We can clearly see the rising pattern stated before. 
+
+Next, we will compare the income and monthly rent cost by creating two different graphs for both variables. 
+```{r}
+summary_data <- census_data |> 
+  group_by(year) |> 
+  summarize(
+    avg_rent = mean(median_monthly_rent_cost, na.rm = TRUE),
+    avg_income = mean(median_income, na.rm = TRUE))
+
+# Line Chart for Rent
+plot_rent <- ggplot(summary_data, aes(x = year, y = avg_rent)) +
+  geom_line(size = 1, color = "#E69F00") +
+  geom_point(size = 3, color = "#E69F00") +
+  labs(
+    x = "Year",
+    y = "Median Monthly Rent (USD)") +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14))
+
+# Line Chart for Income
+plot_income <- ggplot(summary_data, aes(x = year, y = avg_income)) +
+  geom_line(size = 1, color = "#56B4E9") +
+  geom_point(size = 3, color = "#56B4E9") +
+  labs(
+    x = "Year",
+    y = "Median Income (USD)") +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14))
+
+# Combine the Plots Side by Side
+combined_plot <- plot_rent + plot_income + 
+  plot_layout(widths = c(1.5, 1.5)) +
+  plot_annotation(
+    title = "Trends in Rent and Income over the years(2008-2020)",
+    caption = "Source: tidycensus R package and United States Census website",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, size = 16),
+      plot.caption = element_text(hjust = 0.5, size = 12, face = "italic")))
+
+print(combined_plot)
+```
+
+In the above two graphs, we can see a similar pattern for rent and income over the years. Both of them have had an even greater increase in the last years, especially from 2018-2020.
+The only difference we can see is a drop in the median income around the year 2009, which doesn't change the ascending pattern much. This is great for the population, since it means that, even though rent prices are increasing, income is increasing too, so even though rent will be higher, it will still be afordable.
+
+Finally, we will focus on the year 2020. For this year, we will create a bar chart of the median rent by state for this year.
+
+```{r}
+merged_data |> 
+  filter(year == 2020) |> 
+  ggplot(aes(x = reorder(state, median_monthly_rent_cost), y = median_monthly_rent_cost, fill = median_monthly_rent_cost)) +
+  geom_bar(stat = "identity", color = "Black") +
+  coord_flip() +
+  labs(
+    title = "Median Rent by State (2020)",
+    caption = "Source: tidycensus R package and United States Census website",
+    x = "State",
+    y = "Median Monthly Rent Cost (USD)",
+    fill = "Median Rent") +
+  scale_fill_viridis_c(option = "D") +  # Apply Viridis color scale
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    plot.caption = element_text(hjust = 0.5, size = 12, face = "italic"),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    axis.text.y = element_text(size = 5),
+    legend.text = element_text(size = 10))
+```
+
+We can see how California and Hawaii have the highest median rent cost, of around 1750. A couple of states have a value above 1500 and most of them are concentrated around 1000 and 1500. The state with the lowest median monthly rent cost is West Virginia. 
+
+### Median Income vs Poverty Rate by Party
+
+We are now going to further explore if there is an effect by median income and poverty rate on the winning party, while also exploring the relationship between this two factors.
+We will conduct a graphical analysis by the use of a scatter plot. 
+
+```{r}
+merged_data |> 
+  ggplot(aes(x = median_income, y = prop_poverty, color = party_simplified)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Median Income vs. Poverty Rate by Party",
+    caption = "Source: tidycensus R package, United States Census website, MIT Election Data and Science Lab, 2017",
+    x = "Median Income",
+    y = "Poverty Rate",
+    color = "Party") +
+  scale_color_manual(values = party_colors) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    plot.caption = element_text(hjust = 0.89, face = "italic"),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    legend.position = "bottom")
+```
+
+As we can see above in the scatter plot, each point represents one State in one election year. Democrat winning states are colored in blue and Republican states in red. We can also see the two different linear regression or trend lines, one for each party. These lines show the relationship between income and poverty rate. 
+
+As expected, the correlation between poverty rate and median income for both parties is negative. This means that, the higher the median income is in a state, the lower its poverty rate is, which makes sense. We can see how the red line is steeper than the blue line. Therefore, median income has a stronger inverse relationship with poverty rate in Republican states.
+Also, we can clearly appreciate how the red dots are more concentrated on the top left and the blue ones on the bottom right. This means that, by looking at the graph, we could interpret that Republican states have less median income and more poverty rate than Democrat ones. We can also see how Republican states' median income doesn't pass 80000 in any state, and Democrat states' median income doesn't drop bellow 45000.
+
+### Elections popular vote by year and party
+
+Now, I am going to create a bar chart that shows total votes for each presidential candidate for each year grouped by party using the variable party_simplified to only show democrats, republicans, libertarians and other as the parties.
+
+```{r}
+# Selecting the order for the bars
+elections_new <- elections_new |> 
+  mutate(party_simplified = factor(party_simplified, levels = c("Democrat", "Republican", "Libertarian", "Other")))
+
+# Creating the plot
+elections_new |>
+  ggplot(aes(x = factor(year), y = total_votes_us, fill = party_simplified)) +
+  geom_col(position = position_dodge(width = 0.9)) +
+  labs(
+    title = "Total Votes for Presidential Candidates by Year (1976-2020)",
+    x = "Election Year",
+    y = "Total Votes",
+    caption = "MIT Election Data and Science Lab, 2017, U.S. President 1976–2020",
+    fill = "Party") +
+  scale_fill_manual(values = party_colors) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)), labels = scales::comma) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    plot.caption = element_text(hjust = 0.5, face = "italic"),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14), 
+    legend.position = "bottom")
+```
+
+We can see how, over the years, Republicans and Democrats have lead the vote count.In the last 4 elections, the democrats have won the popular vote every time, although this doesn't mean they won the election. As we now, the electoral college determines who the president is, so, for example, in the 2016 elections, even though they got less votes, the Republicans won the elections and Trump became president. The same thing happened in the year 2000.
+
+
+### Proportion of Bachelor Degree Holders by State
+
+```{r}
+merged_data |> 
+  filter(year == 2020) |> 
+  ggplot(aes(x = reorder(state, -prop_bachelors), y = prop_bachelors, fill = party_simplified)) +
+  geom_bar(stat = "identity", width = 1, color = "Black") +
+  coord_flip() +
+  labs(
+    title = "Proportion of Bachelor Degree Holders by State and Party (2020)",
+    caption = "Source: tidycensus R package and United States Census website, MIT Election Data and Science Lab, 2017",
+    x = "State",
+    y = "Proportion of Bachelor Degrees Holders",
+    fill = "Party") +
+  scale_fill_manual(values = party_colors) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 1, size = 16),
+    plot.caption = element_text(hjust = 0.95, face = "italic"),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text.y = element_text(size = 5),
+    legend.position = "bottom")
+```
+
+
+On the above graph, we can start to see a pattern. Republican states are concentrated at the top, with a smaller proportion of bachelor degree holders. As we look at the bottom of the graph, we can start to see more blue or Democrat states, meaning they have a higher proportion of bachelor degrees.
+
+### Proportion of White population by party
+
+The topic of racial dynamics in the United States has always been central to its political discourse, and it gained particular intensity during the presidency of Donald Trump. His administration often faced criticism for policies that were viewed as catering to the concerns of majority White populations, while failing to address racial inequalities in the country.
+
+We are now going to focus on the proportion of White populations across states dominated by Democrats and Republicans in the 2020 election. By comparing these proportions, this graph seeks to provide insights into the racial composition of states and how it correlates with political dominance, shedding light on the demographic divides that continue to shape the U.S. political landscape. 
+
+This analysis will be conducted by the use of two boxplots, one for each party, showing the proportion of white population in each state for the year 2020.
+
+```{r}
+ggplot() +
+  geom_boxplot(
+    data = merged_data |> filter(year == 2020),
+    aes(x = party_simplified, y = prop_white, fill = party_simplified),
+    outlier.color = "red", outlier.size = 2, alpha = 0.7) +
+  geom_text(
+    data = merged_data |> filter(year == 2020, state == "Hawaii"),
+    aes(x = party_simplified, y = prop_white, label = state),
+    nudge_x = 0.1,  # Adjust the horizontal position of the label as needed
+    size = 3,
+    color = "red") +
+  labs(
+    title = "Proportion of White Population by Dominant Party (2020)",
+    caption = "Source: tidycensus R package and United States Census website, MIT Election Data and Science Lab, 2017",
+    x = "Party",
+    y = "Proportion of White Population",
+    fill = "Party") +
+  scale_fill_manual(values = party_colors) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    plot.caption = element_text(hjust = 0.9, face = "italic"),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    legend.position = "none")
+```
+
+Above we can see the two boxplots, each with its party's color. It is clear that the mean and median of the Republican-dominated states white population proportion is higher than the Democrat states one. The mean for Democrat states' white population proportion is 0.64, while for Republican ones it is 0.73. This suggests that states with larger white populations may have leaned toward Republican dominance. We need to keep in mind that, to correctly interpret these results and draw conclusions, we would need to consider additional factors. 
+It is important to highlight that we have one outlier in the Democrat boxplot. It corresponds to Hawaii, and can be attributed to its unique geographic location, history and demographic makeup.
+
+
+# 4. Monte Carlo Methods of Inference
+
+Now, we will further explore the relationship between Bachelor degree holders and the dominant party for each state for the year 2020. 
+We want to determine if the proportion of individuals with a bachelor's degree is statistically significantly higher in states where Democrats are the dominant party. 
+To do this, we will use a permutation  test.
+
+The hypothesis are:
+
+H~0~: $\mu_1 = \mu_2$
+
+H~a~: $\mu_1 > \mu_2$
+
+Where $\mu_1$ represents the mean proportion of individuals with a bachelor's degree in Democrat-dominated states, and $\mu_2$ represents the mean proportion of individuals with a bachelor's degree in Republican-dominated states
+
+Let's compare both proportions:
+
+```{r}
+# Filter data for the year 2020
+data_2020 <- merged_data |> filter(year == 2020)
+
+#Boxplots:
+ggplot(data_2020, aes(x = party_simplified, y = prop_bachelors, fill = party_simplified)) +
+  stat_boxplot(geom = "errorbar", width = 0.2, coef = 1.5) +
+  stat_boxplot(geom = "boxplot", width = 0.5, coef = 1.5, outlier.shape = 8) +
+  stat_summary(fun = "mean", geom = "point", shape = 23, fill = "black", color = "white", size = 3) +  # Mean points
+   scale_fill_manual(values = party_colors) +
+  coord_flip() +
+  labs(
+    y = "Proportion of Bachelor's Degree Holders",
+    x = "Party",
+    title = "Comparison of Proportion of Bachelor's Degree Holders by Party (2020)",
+    fill = "Party") +
+  theme_few() +
+  theme(
+    plot.title = element_text(hjust = 0.7, size = 15, ),
+    axis.title.x = element_text(size = 13),
+    axis.title.y = element_text(size = 13),
+    plot.margin = margin(t = 20, r = 30, b = 20, l = 20),
+    legend.position = "none")
+```
+
+We can visually see how proportion of Bachelor Degree Holders is higher for Democrat dominated states.
+
+Let's now look at the empirical density curves:
+
+```{r}
+ggplot(data_2020, aes(x = prop_bachelors, fill = party_simplified)) +
+  geom_dotplot() +
+  geom_density(color = "black", alpha = 0.6) +
+  scale_fill_manual(values = party_colors) +
+  facet_grid(party_simplified ~ .) +
+  labs(
+    x = "Proportion of Bachelor's Degree Holders",
+    title = "Empirical Density Curves and Dot Plot by Party (2020)",
+    y = "Density") +
+  theme_few() +
+  theme(
+    legend.position = "none",)
+```
+
+Let's implement the two sample t-test
+
+```{r}
+# Relevel party_simplified to make "Democrat" group 1
+data_2020 <- data_2020 |> 
+  mutate(party_simplified = fct_relevel(party_simplified, "Democrat", "Republican"))
+
+# Implementing two-sample t-test
+ttest_result <- t.test(formula = prop_bachelors ~ party_simplified, 
+                       alternative = "greater",
+                       data = data_2020)
+```
+
+Displaying the results:
+
+```{r}
+# Tidy the t-test result and format it for display
+ttest_result |> 
+  broom::tidy() |>
+  flextable() |>
+  colformat_double(digits = 3) |>
+  set_formatter(p.value = function(x) {format.pval(x, digits = 3)}) |>
+  set_caption("Results of two-sample t-test comparing proportion of bachelor's degree holders between Democrat and Republican states.") |> 
+  autofit() |>
+  fit_to_width(max_width = 7)
+```
+
+Now, let's do the randomization test, which requires equal variances. 
+
+```{r}
+data_2020 |> 
+  group_by(party_simplified) |>
+  summarize(
+    Mean = mean(prop_bachelors, na.rm = TRUE),
+    n = n(),
+    SD = sd(prop_bachelors, na.rm = TRUE),
+    Variance = var(prop_bachelors, na.rm = TRUE))  |> 
+  flextable() |>
+  colformat_double(digits = 3) |>
+  autofit()
+```
+
+We can see that there are equal variances.
+Let's implement the two-sample t-test for 500 random permutations of individuals to create our null distribution of test statistics for the randomization test.
+
+```{r}
+# Number of permutations to do
+n_permutations <- 500
+
+# Instantiating vector for test statistics
+permutation_statistics <- vector(length = n_permutations)
+
+# Calculating t-test statistic for each permutation
+for (p in 1:n_permutations) {
+  permutation_statistics[p] <- t.test(
+    formula = prop_bachelors ~ party_simplified,
+    alternative = "greater",
+    data = data_2020 |> 
+      mutate(party_simplified = sample(party_simplified, replace = FALSE))) |> 
+    broom::tidy() |> 
+    pull(statistic)
+}
+```
+
+Let's create a histogram displaying the null distribution obtained for the randomization test. Vertical lines will be added to the plot to indicate where the 5th percentile is (a solid red line), and where our observed test statistic is (dotted blue line).
+
+```{r}
+# Tidying into a tibble
+permutation_results <- tibble(Value = permutation_statistics)
+
+# Visualizing the randomization test null distribution
+permutation_results |> 
+  ggplot(aes(x = Value)) +
+  geom_histogram(color = "black", fill = "#D3D3D3") +
+  geom_vline(xintercept = quantile(permutation_statistics, probs = 0.95),
+             color = "red") +
+  geom_vline(xintercept = ttest_result$statistic,
+             color = "dodgerblue",
+             linetype = "dotted") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(
+    title = "Randomization Test Null Distribution",
+    y = "Frequency",
+    x = "Test Statistic") +
+  theme_few() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14))
+```
+
+ON the graph, we can clearly see how our observed test statistic line (blue) has a higher value than the 5th percentile (red line)
+Let's now calculate the p-value for the randomization test:
+
+```{r}
+# Calculating the randomization test p-value
+mean(permutation_statistics >= ttest_result$statistic)
+```
+
+*Do we reject or fail to reject the null at the 5% significance level?*
+
+**Decision**: We reject the null hypothesis since $0 < \alpha = 0.05$
+
+**Interpretation in context**: We have sufficient evidence at the 5% significance level that the average proportion of bachelor degree holders in Democrat-dominated states is greater than in Republican-dominated states.
+
+
+# 5. Conclusions / Main Takeaways
+
+This analysis explored the last election results and candidates, different demographic factors, and the relationship between them. The objective was to uncover meaningful insights and evaluate the significance of observed trends. The visualizations highlighted noticeable differences in educational attainment between Democrat- and Republican-dominated states, with Democrat-dominated states exhibiting a higher average proportion of bachelor’s degree holders.
+Also, some other demographics relationships were showed, such as the one between rent cost and income or between income and poverty, which is a negative relation. It is also important to highlight that white people proportion is higher in Republican-dominated states.
+Regarding politics, the dominance of the two big parties, Democrats and Republicans is huge, and there is a clear increasing pattern in the number of votes in each election, which can be attributed to population growth but also to higher voter turnout. 
+This project demonstrates the importance of integrating robust statistical methods with clear visualization and thoughtful interpretation.
