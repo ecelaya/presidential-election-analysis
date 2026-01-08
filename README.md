@@ -11,7 +11,7 @@ I cleaned and merged presidential election data (MIT Election Lab) with census d
 
 ## 📁 Project Files
 - `Final_Report_Eloy.Rmd` – Full analysis written in R Markdown
-- `Final_Report_Eloy.Rmd` – knitted report to PDF
+- `Final_Report_Eloy.pdf` – knitted report to PDF
 - `elections_data.csv` – Raw election results dataset (1976–2020) from MIT Election Lab  
 - `census_data.csv` – State-level demographic and economic data (2008–2021) from the U.S. Census
 
