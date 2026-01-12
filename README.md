@@ -31,3 +31,4 @@ I cleaned and merged presidential election data (MIT Election Lab) with census d
 
 ## 🙋 Author
 **Eloy Celaya López**
+STA 418 - Grand Valley State University, MI
